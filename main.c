@@ -78,9 +78,6 @@ int main(int ac, char **av)
 
     printf("traceroute to %s (%s), %d hops max\n", args.address, ip, args.max_hops);
 
-    fd_set readfds;
-    FD_ZERO(&readfds);
-
     int error = 1;
     int ttl = 1;
 
@@ -93,10 +90,6 @@ int main(int ac, char **av)
         }
         printf(" %2d   ", ttl);
 
-        struct timeval tv;
-        tv.tv_sec = args.timeout;
-        tv.tv_usec = 0;
-
         dest_addr.sin_port = htons(args.port + ttl - 1);
         int i = 0;
         int ip_printed = 0;
@@ -107,6 +100,7 @@ int main(int ac, char **av)
             struct timeval send, recv;
 
 
+
             gettimeofday(&send, NULL);
             if (sendto(send_sock, PAYLOAD, sizeof(PAYLOAD), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0) 
             {
@@ -114,8 +108,14 @@ int main(int ac, char **av)
                 error = 0;
                 break;
             }
-            FD_SET(recv_sock, &readfds);
+            fd_set readfds;
+            FD_ZERO(&readfds);
 
+            FD_SET(recv_sock, &readfds);
+            struct timeval tv;
+            tv.tv_sec = args.timeout;
+            tv.tv_usec = 0;
+            
             int ret = select(recv_sock + 1, &readfds, NULL, NULL, &tv);
             if (ret == -1) {
                 if (errno == EINTR) break; 
