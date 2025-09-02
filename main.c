@@ -78,10 +78,6 @@ int main(int ac, char **av)
 
     printf("traceroute to %s (%s), %d hops max\n", args.address, ip, args.max_hops);
 
-    struct timeval tv;
-    tv.tv_sec = args.timeout;
-    tv.tv_usec = 0;
-
     fd_set readfds;
     FD_ZERO(&readfds);
 
@@ -96,13 +92,20 @@ int main(int ac, char **av)
             break;
         }
         printf(" %2d   ", ttl);
+
+        struct timeval tv;
+        tv.tv_sec = args.timeout;
+        tv.tv_usec = 0;
+
         dest_addr.sin_port = htons(args.port + ttl - 1);
         int i = 0;
+        int ip_printed = 0;
         while (i < args.packet_per_hop && loop)
         {
             char recv_packet[512];
             bzero(recv_packet, 512);
             struct timeval send, recv;
+
 
             gettimeofday(&send, NULL);
             if (sendto(send_sock, PAYLOAD, sizeof(PAYLOAD), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0) 
@@ -140,7 +143,10 @@ int main(int ac, char **av)
                             continue;
                         gettimeofday(&recv, NULL);
                         char *recv_ip = inet_ntoa(ip_hdr->ip_src);
-                        if (i == 0) printf("%s  ", recv_ip);
+                        if (ip_printed == 0) {
+                            printf("%s  ", recv_ip);
+                            ip_printed = 1;
+                        }
                         float ms = get_ms(send, recv);
                         printf("%.3f ms  ", ms);    
                         if (icmp_hdr->icmp_type == ICMP_UNREACH && icmp_hdr->icmp_code == ICMP_UNREACH_PORT && i == 2) loop = 0;
