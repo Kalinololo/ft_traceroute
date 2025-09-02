@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
+#include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <netdb.h>
 #include <arpa/inet.h>

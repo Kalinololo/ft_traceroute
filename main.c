@@ -56,11 +56,25 @@ int main(int ac, char **av)
     sa.sa_flags = 0; // SA_RESTART to 0 so blocking operation like recvfrom can be interrupted
     sigaction(SIGINT, &sa, NULL);
 
-    struct sockaddr_in dest_addr;
+    struct sockaddr_in dest_addr, src_addr;
 
     bzero(&dest_addr, sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_addr.s_addr = inet_addr(ip);
+
+    bzero(&src_addr, sizeof(src_addr));
+    src_addr.sin_family = AF_INET;
+    src_addr.sin_addr.s_addr = INADDR_ANY;
+    src_addr.sin_port = htons((getpid() & 0xFFFF) | (1 << 15));
+
+    if (bind(send_sock, (struct sockaddr*)&src_addr, sizeof(src_addr)) < 0) {
+        perror("bind");
+        close(send_sock);
+        free(ip);
+        free(args.address);
+        close(recv_sock);
+        return EXIT_FAILURE;
+    }
 
     printf("traceroute to %s (%s), %d hops max\n", args.address, ip, args.max_hops);
 
@@ -72,7 +86,6 @@ int main(int ac, char **av)
     FD_ZERO(&readfds);
 
     int error = 1;
-
     int ttl = 1;
 
     while (ttl <= args.max_hops && loop)
@@ -113,16 +126,25 @@ int main(int ac, char **av)
             } else {
                 ssize_t n = recvfrom(recv_sock, &recv_packet, sizeof(recv_packet), 0, NULL, NULL);
                 if (n > 0) {
-                    gettimeofday(&recv, NULL);
                     struct ip *ip_hdr = (struct ip *)recv_packet;
-                    struct icmp *icmp_hdr = (struct icmp *)(recv_packet + (ip_hdr->ip_hl << 2));
+                    struct icmp *icmp_hdr = (struct icmp *)(recv_packet + (ip_hdr->ip_hl * 4));
+                    if (icmp_hdr->icmp_type == ICMP_UNREACH || icmp_hdr->icmp_type == ICMP_TIMXCEED) {
+                        struct ip *orig_ip_hdr = (struct ip *)(recv_packet + (ip_hdr->ip_hl * 4) + 8);
+                        int orig_ip_hdr_len = orig_ip_hdr->ip_hl * 4;
 
-                    char *recv_ip = inet_ntoa(ip_hdr->ip_src);
-                    if (i == 0) printf("%s  ", recv_ip);
-                    float ms = get_ms(send, recv);
-                    printf("%.3f ms  ", ms);
+                        struct udphdr *orig_udp_hdr = (struct udphdr *)((char *)orig_ip_hdr + orig_ip_hdr_len);
 
-                    if (icmp_hdr->icmp_type == ICMP_UNREACH && icmp_hdr->icmp_code == ICMP_UNREACH_PORT && i == 2) loop = 0;
+                        in_port_t src_port = (orig_udp_hdr->uh_sport);
+                        in_port_t dst_port = (orig_udp_hdr->uh_dport);
+                        if (src_port != src_addr.sin_port || dst_port != dest_addr.sin_port)
+                            continue;
+                        gettimeofday(&recv, NULL);
+                        char *recv_ip = inet_ntoa(ip_hdr->ip_src);
+                        if (i == 0) printf("%s  ", recv_ip);
+                        float ms = get_ms(send, recv);
+                        printf("%.3f ms  ", ms);    
+                        if (icmp_hdr->icmp_type == ICMP_UNREACH && icmp_hdr->icmp_code == ICMP_UNREACH_PORT && i == 2) loop = 0;
+                    }
                 }
             }
             i++;
